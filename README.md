@@ -1093,4 +1093,170 @@ GB CLS only ...
 
 Wanneer deze output verschijnt is de predictor succesvol geladen en functioneert de volledige pipeline.
 
+# Stap 15: Voorspellen op bestaande testdata
+Controleer nu of de predictor correct werkt op voorbeelden uit de testset.
 
+Deze stap gebruikt bestaande enzym-substraatcombinaties uit de testdata. Hierdoor kan gecontroleerd worden of de predictor correct functioneert op data die al eerder door de pipeline is verwerkt.
+
+Laad eerst de testset:
+
+```python
+import pandas as pd
+
+pred_df = pd.read_csv(
+    "data/training_data/ESP/saved_predictions/ESP_test_with_predictions.csv"
+)
+```
+
+Selecteer vervolgens één voorbeeld uit de dataset:
+
+```python
+row = pred_df.iloc[0]
+
+SMILES = row["SMILES"]
+
+PROTEIN_SEQUENCE = row["Protein sequence"]
+
+pred.run_single_prediction(
+    SMILES,
+    PROTEIN_SEQUENCE
+)
+```
+
+De predictor zou een activiteitsscore moeten retourneren samen met:
+
+```text
+Final activity score
+Predicted class
+Confidence
+Submodel scores
+```
+
+Wanneer deze voorspelling succesvol wordt uitgevoerd, functioneert de predictor correct op bestaande testdata.
+
+---
+
+# Stap 16: Voer batch predictions uit
+Nu ga je kijken of er ook accuraat meerdere voorspellingen tegelijk uitgevoerd kunnen worden.
+
+Dit is nuttig wanneer meerdere enzym-substraatcombinaties tegelijkertijd geëvalueerd moeten worden.
+
+Selecteer een willekeurige subset uit de testdata:
+
+```python
+input_df = pred_df.sample(
+    n=10,
+    random_state=42
+)
+```
+
+Voer vervolgens batch prediction uit:
+
+```python
+results = pred.predict_batch(
+    input_df
+)
+
+results
+```
+
+Sla de resultaten op:
+
+```python
+results.to_csv(
+    "batch_prediction_results.csv",
+    index=False
+)
+```
+
+Controleer of het bestand succesvol is aangemaakt:
+
+```python
+import os
+
+print(
+    os.path.exists(
+        "batch_prediction_results.csv"
+    )
+)
+```
+
+Je verwacht dan terug te krijgen:
+
+```text
+True
+```
+
+Je kunt nu het opgeslagen bestand openen in excel en kijken naar de resultaten. Desnoods kun je ook statistiek op deze datasets uitvoeren.
+
+# Stap 17: Voer een live prediction uit
+Nu zou je in theorie een voorspelling uit kunnen voeren op een nieuwe enzym-substraatcombinatie. De success hiervan is extreem afhankelijk van de informatie die het model verkregen heeft via de training. Het is dus niet raar als je lage waardes hebt, omdat dit vooral betekent dat het model zulke combinaties nog niet herkent.
+
+Wanneer de ingevoerde SMILES of aminozuursequentie niet aanwezig is in de opgeslagen embeddings, zal de predictor automatisch nieuwe embeddings genereren met:
+
+```text
+SMILES → ChemBERTa
+
+Proteïne → ESM1b
+```
+
+Vervang onderstaande placeholders door een eigen SMILES en aminozuursequentie uit literatuur:
+
+```python
+SMILES = "<VOER_HIER_EEN_SMILES_IN>"
+
+PROTEIN_SEQUENCE = """
+<VOER_HIER_EEN_AMINOZUURSEQUENTIE_IN>
+""".replace("\n", "").replace(" ", "")
+
+pred.run_single_prediction(
+    SMILES,
+    PROTEIN_SEQUENCE
+)
+```
+
+Wanneer de combinatie niet aanwezig is in de opgeslagen embeddings kan de output onder andere bevatten:
+
+```text
+SMILES embedding source: live ChemBERTa embedding
+
+Protein embedding source: live ESM1b embedding
+```
+
+Dit bevestigt dat de live embedding pipeline correct functioneert.
+
+
+
+# Stap 18: Minimale eindgebruikerscode
+Alles is nu opgezet en klaar voor gebruik!
+
+Onderstaande code bevat de minimale hoeveelheid code die een gebruiker nodig heeft om een voorspelling uit te voeren nadat de predictor volledig is opgezet.
+
+Vervang de placeholders door een eigen SMILES en aminozuursequentie:
+
+```python
+import sys
+
+sys.path.append(
+    "/pad/naar/ProSmith/code/Predictor"
+)
+
+import predictor_utils_live as pred
+
+pred.load_predictor(
+    load_live_models=True
+)
+
+SMILES = "<VOER_HIER_EEN_SMILES_IN>"
+
+PROTEIN_SEQUENCE = """
+<VOER_HIER_EEN_AMINOZUURSEQUENTIE_IN>
+""".replace("\n", "").replace(" ", "")
+
+pred.run_single_prediction(
+    SMILES,
+    PROTEIN_SEQUENCE
+)
+```
+
+Na het uitvoeren van deze code retourneert de predictor een activiteitsscore, classificatie en betrouwbaarheidsinschatting voor de ingevoerde enzym-substraatcombinatie.
