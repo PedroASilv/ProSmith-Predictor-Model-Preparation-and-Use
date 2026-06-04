@@ -139,6 +139,91 @@ gb_all_cls.json
 gb_cls.json
 ensemble_weights.json
 ```
+## Stap 7a: Gradient Boosting modellen opslaan
+De standaard workflow genereert voorspellingen, maar voor een standalone predictor moeten de getrainde Gradient Boosting modellen ook worden opgeslagen.
+Hierdoor kunnen voorspellingen later worden uitgevoerd zonder de volledige training opnieuw te draaien.
+
+Open
+```text
+code/training/training_GB.py
+```
+Voeg de onderstaande code toe:
+```text
+bst_all_test.save_model(
+    os.path.join(
+        args.save_gb_model_path,
+        "gb_all.json"
+    )
+)
+
+bst_all_cls_test.save_model(
+    os.path.join(
+        args.save_gb_model_path,
+        "gb_all_cls.json"
+    )
+)
+
+bst_cls_test.save_model(
+    os.path.join(
+        args.save_gb_model_path,
+        "gb_cls.json"
+    )
+)
+
+weights = {
+    "w_all_cls": float(best_i),
+    "w_all": float(best_j),
+    "w_cls": float(best_k)
+}
+
+with open(
+    os.path.join(
+        args.save_gb_model_path,
+        "ensemble_weights.json"
+    ),
+    "w"
+) as f:
+    json.dump(
+        weights,
+        f,
+        indent=4
+    )
+```
+
+Voer als controle uit:
+```bash
+ls data/training_data/ESP/saved_gb_model/
+```
+En je verwacht iets te zien zoals:
+```text
+gb_all.json
+gb_all_cls.json
+gb_cls.json
+ensemble_weights.json
+```
+## Stap 7b: Test predictions koppelen aan de originele testset
+Tijdens de oorspronkelijke training worden alleen de voorspellingen opgeslagen.
+Om deze voorspellingen later terug te koppelen aan de originele testset worden ook de originele testindices opgeslagen. Hierdoor kan iedere voorspelling weer aan de juiste rij uit de testset gekoppeld worden.
+
+Controleer of de onderstaande regels aanwezig zijn:
+```text
+np.save(
+    join(
+        args.save_pred_path,
+        "y_test_pred.npy"
+    ),
+    y_test_pred
+)
+
+np.save(
+    join(
+        args.save_pred_path,
+        "test_indices.npy"
+    ),
+    np.array(test_indices)
+)
+```
+Hierdoor kun je later y_test_pred.npy en test_indices.npy combineren tot ESP_test_with_predictions.csv
 
 # Stap 8: Koppel predictions aan de testset
 Tijdens de training worden de voorspellingen van het model opgeslagen in aparte bestanden. Deze voorspellingen bevatten de activiteitsscores die het model heeft berekend voor iedere combinatie in de testset.
