@@ -201,7 +201,7 @@ gb_all_cls.json
 gb_cls.json
 ensemble_weights.json
 ```
-## Stap 7b: Test predictions koppelen aan de originele testset
+## Stap 7b: Test predictions koppelen aan de originele testset controle
 Tijdens de oorspronkelijke training worden alleen de voorspellingen opgeslagen.
 Om deze voorspellingen later terug te koppelen aan de originele testset worden ook de originele testindices opgeslagen. Hierdoor kan iedere voorspelling weer aan de juiste rij uit de testset gekoppeld worden.
 
@@ -1345,3 +1345,143 @@ pred.run_single_prediction(
 ```
 
 Na het uitvoeren van deze code retourneert de predictor een activiteitsscore, classificatie en betrouwbaarheidsinschatting voor de ingevoerde enzym-substraatcombinatie.
+
+# Bijlage A – Data leakage fix in `training_GB.py`
+In de oorspronkelijke Gradient Boosting workflow werd de validatieset deels opnieuw gebruikt bij het trainen van de modellen die uiteindelijk op de testset werden geëvalueerd.
+Dat is ongewenst, omdat de validatieset dan niet meer uitsluitend wordt gebruikt voor modelselectie. Hierdoor kan de uiteindelijke testprestatie te optimistisch worden.
+
+De oplossing is dat de validatieset alleen gebruikt wordt voor:
+
+- hyperparameterselectie
+- ensemble weight selectie
+
+en niet opnieuw wordt toegevoegd aan de trainingdata voor de finale testset-predictions.
+
+## Stap 1: Open `training_GB.py`
+
+Open het bestand:
+
+```text
+code/training/training_GB.py
+```
+## Stap 2: Pas het eerste Gradient Boosting model aan (ESM1b+ChemBERTa2)
+Zoek deze code:
+```text
+bst_all_test, y_test_pred_all = get_predictions(
+    param = trials.argmin,
+    dM_train = dtrain_val,
+    dM_val = dtest
+)
+```
+Vervang dit door:
+```text
+bst_all_test, y_test_pred_all = get_predictions(
+    param = trials.argmin,
+    dM_train = dtrain,
+    dM_val = dtest
+)
+```
+## Stap 3: Pas het tweede Gradient Boosting model aan (ESM1b+ChemBERTa2+cls-token)
+Zoek deze code:
+```text
+bst_all_cls_test, y_test_pred_all_cls = get_predictions(
+    param = trials.argmin,
+    dM_train = dtrain_val_all_cls,
+    dM_val = dtest_all_cls
+)
+```
+Vervang dit door:
+```text
+bst_all_cls_test, y_test_pred_all_cls = get_predictions(
+    param = trials.argmin,
+    dM_train = dtrain_all_cls,
+    dM_val = dtest_all_cls
+)
+```
+## Stap 4: Pas het derde Gradient Boosting model aan (cls-token)
+Zoek deze code:
+```text
+bst_cls_test, y_test_pred_cls = get_predictions(
+    param = trials.argmin,
+    dM_train = dtrain_val_cls,
+    dM_val = dtest_cls
+)
+```
+Vervang dit door:
+```text
+bst_cls_test, y_test_pred_cls = get_predictions(
+    param = trials.argmin,
+    dM_train = dtrain_cls,
+    dM_val = dtest_cls
+)
+```
+## Stap 5: Controleer of de oude dtrain_val varianten niet meer worden gebruikt
+De volgende objecten mogen nog bestaan:
+```text
+dtrain_val
+dtrain_val_all_cls
+dtrain_val_cls
+```
+Maar ze mogen niet meer gebruikt worden bij:
+```text
+bst_all_test
+bst_all_cls_test
+bst_cls_test
+```
+De testset-predictions moeten dus uitsluitend deze train-objecten gebruiken:
+```text
+dtrain
+dtrain_all_cls
+dtrain_cls
+```
+## Stap 6: Run de leakage-vrije Gradient Boosting training
+Gebruik aparte outputmappen zodat de oude en leakage-vrije resultaten niet door elkaar lopen:
+```bash
+python code/training/training_GB.py \
+    --train_dir data/training_data/ESP/train_val/ESP_train_df.csv \
+    --val_dir data/training_data/ESP/train_val/ESP_val_df.csv \
+    --test_dir data/training_data/ESP/train_val/ESP_test_df.csv \
+    --pretrained_model data/training_data/ESP/saved_model/ESP_2gpus_bs48_1e-05_layers6.txt.pkl \
+    --embed_path data/training_data/ESP/embeddings \
+    --save_pred_path data/training_data/ESP/saved_predictions_no_leakage \
+    --save_gb_model_path data/training_data/ESP/saved_gb_model_no_leakage \
+    --num_hidden_layers 6 \
+    --num_iter 500 \
+    --log_name ESP_no_leakage \
+    --binary_task True
+```
+## Stap 7: Controleer de output
+Controleer of de leakage-vrije Gradient Boosting modellen zijn opgeslagen:
+```bash
+ls data/training_data/ESP/saved_gb_model_no_leakage/
+```
+Verwachte output:
+```text
+gb_all.json
+gb_all_cls.json
+gb_cls.json
+ensemble_weights.json
+```
+Controleer ook of de predictions zijn opgeslagen:
+```bash
+ls data/training_data/ESP/saved_predictions_no_leakage/
+```
+Verwachte output:
+```text
+y_test_pred.npy
+test_indices.npy
+```
+## Stap 8: Gebruik de leakage-vrije modellen in de predictor
+Open:
+```text
+code/Predictor/predictor_utils_live.py
+```
+Zoek:
+```text
+MODEL_DIR = "data/training_data/ESP/saved_gb_model"
+```
+Vervang dit door:
+```text
+MODEL_DIR = "data/training_data/ESP/saved_gb_model_no_leakage"
+```
+Hierdoor gebruikt de live predictor de leakage-vrije Gradient Boosting modellen.
